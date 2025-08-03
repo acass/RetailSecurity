@@ -31,7 +31,13 @@ YOLO_CLASS_NAMES = [
 ]
 
 class YOLOVideoProcessor(VideoProcessorBase):
+    """Video processor that applies YOLO object detection to WebRTC video frames.
+    
+    This class handles real-time object detection on video streams using YOLOv8,
+    with support for filtering specific object classes and adjustable confidence thresholds.
+    """
     def __init__(self):
+        """Initialize the YOLO video processor with default settings."""
         self.model = YOLO("yolov8n.pt")
         self.filtered_classes = None  # None means show all objects
         self.confidence_threshold = 0.5
@@ -104,7 +110,17 @@ class YOLOVideoProcessor(VideoProcessorBase):
         return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
 
 class OpenAIProcessor:
+    """Processes natural language commands to filter object detection results.
+    
+    Uses OpenAI's GPT-4 to interpret user commands and convert them into
+    specific object class filters for the YOLO detection system.
+    """
     def __init__(self):
+        """Initialize the OpenAI processor with API key from environment variables.
+        
+        Raises:
+            Streamlit error and stops execution if OPENAI_API_KEY is not found.
+        """
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
             st.error("OpenAI API key not found. Please set OPENAI_API_KEY in your .env file.")
@@ -116,7 +132,8 @@ class OpenAIProcessor:
         
         available_objects = ", ".join(YOLO_CLASS_NAMES)
         
-        system_prompt = f"""You are an assistant for a video surveillance system. Your job is to interpret user requests about which objects to show in the video stream.
+        system_prompt = f"""You are an assistant for a video surveillance system. 
+Your job is to interpret user requests about which objects to show in the video stream.
 
 Available object types: {available_objects}
 
@@ -157,7 +174,10 @@ Examples:
                 match = re.search(r'\[(.*?)\]', result)
                 if match:
                     items = match.group(1).split(',')
-                    class_list = [item.strip().strip('"').strip("'") for item in items if item.strip()]
+                    class_list = [
+                        item.strip().strip('"').strip("'") 
+                        for item in items if item.strip()
+                    ]
                     return class_list
             
             return []
@@ -167,6 +187,11 @@ Examples:
             return []
 
 def main():
+    """Main Streamlit application function for the AI surveillance system.
+    
+    Sets up the WebRTC video stream with YOLO object detection and 
+    AI-powered chat interface for dynamic object filtering.
+    """
     st.set_page_config(
         page_title="AI Retail Surveillance - WebRTC",
         page_icon="📹",
