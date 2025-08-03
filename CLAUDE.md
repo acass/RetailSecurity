@@ -16,11 +16,18 @@ This is a Python-based retail security surveillance application that uses comput
 
 ### Environment Setup
 ```bash
+# Install all dependencies from requirements.txt
+pip install -r requirements.txt
+
+# Or install manually:
 # Basic dependencies
 pip install opencv-python ultralytics
 
 # For Streamlit web app with AI chat
 pip install streamlit openai python-dotenv
+
+# For FastAPI web server
+pip install fastapi uvicorn pydantic
 
 # Additional dependencies may be needed:
 pip install torch torchvision  # For YOLO model inference
@@ -29,8 +36,10 @@ pip install numpy matplotlib   # Common CV dependencies
 
 ### Running the Application
 ```bash
-python app.py                  # Run basic surveillance application
-streamlit run streamlit_app.py # Run interactive Streamlit web app with AI chat
+python Basic.py                       # Run basic surveillance application
+streamlit run streamlit_webrtc_app.py # Run interactive Streamlit web app with AI chat
+python api.py                         # Run FastAPI web server with REST API
+uvicorn api:app --reload              # Run FastAPI with auto-reload for development
 ```
 
 ### YOLO Model Management
@@ -56,8 +65,11 @@ python -c "from ultralytics import YOLO; print('YOLO imported successfully')"  #
 #### Basic Surveillance App (`app.py`)
 Simple OpenCV-based application for direct video processing with YOLO detection.
 
-#### Interactive Streamlit App (`streamlit_app.py`)
+#### Interactive Streamlit App (`streamlit_webrtc_app.py`)
 Web-based application with AI-powered chat interface for dynamic object filtering.
+
+#### FastAPI REST API Server (`api.py`)
+Production-ready REST API server with natural language query processing for surveillance video streams.
 
 ### Core Components
 
@@ -101,10 +113,15 @@ The application follows a continuous processing pattern:
 
 ## Configuration and Customization
 
-### Environment Variables (Streamlit App)
+### Environment Variables
 Create a `.env` file in the project root:
 ```
-OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here  # Required for AI chat and natural language queries
+CAMERA_SOURCE=0                          # Camera source (0 for webcam, RTSP URL for IP camera)
+CONFIDENCE_THRESHOLD=0.5                 # Object detection confidence threshold
+MODEL_PATH=yolov8n.pt                    # YOLO model file path
+PORT=8000                                # FastAPI server port
+HOST=0.0.0.0                            # FastAPI server host
 ```
 
 ### Camera Stream Configuration
@@ -220,3 +237,105 @@ python -c "import cv2, numpy as np; print(f'OpenCV: {cv2.__version__}, NumPy: {n
 - **Multi-Stream**: Support multiple camera feeds simultaneously
 - **Custom Training**: Train YOLO models on retail-specific datasets
 - **Analytics**: Add detection counting, timing, and reporting features
+
+## FastAPI REST API Usage
+
+### Starting the API Server
+```bash
+# Start FastAPI server
+python api.py
+
+# Or with uvicorn for development
+uvicorn api:app --reload --host 0.0.0.0 --port 8000
+```
+
+### API Endpoints
+
+#### Core Endpoints
+- `GET /` - API information and available endpoints
+- `GET /health` - Health check and service status
+- `GET /docs` - Interactive Swagger API documentation
+- `GET /redoc` - Alternative API documentation
+
+#### Video Stream Management
+- `POST /stream/start` - Start video capture from camera
+- `POST /stream/stop` - Stop video capture
+- `GET /stream/status` - Get current stream status and info
+
+#### Object Detection
+- `GET /detections/current` - Get current detection results
+- `GET /detections/classes` - List all detectable object classes
+- `GET /detections/summary` - Get detection statistics
+- `POST /detections/filter` - Filter detections by class names
+
+#### Natural Language Queries
+- `POST /query` - Ask natural language questions about the video
+- `GET /query/suggestions` - Get example query suggestions
+
+#### Configuration
+- `POST /config/confidence` - Update detection confidence threshold
+
+### Example API Usage
+
+#### Starting Video Stream
+```bash
+curl -X POST "http://localhost:8000/stream/start" \
+     -H "Content-Type: application/json" \
+     -d '{"source": 0, "confidence_threshold": 0.5}'
+```
+
+#### Natural Language Query
+```bash
+curl -X POST "http://localhost:8000/query" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "Are there any dogs in the patio?"}'
+```
+
+#### Get Current Detections
+```bash
+curl "http://localhost:8000/detections/current"
+```
+
+#### Filter Detections
+```bash
+curl -X POST "http://localhost:8000/detections/filter" \
+     -H "Content-Type: application/json" \
+     -d '["person", "car", "dog"]'
+```
+
+### Natural Language Query Examples
+- "Are there any dogs in the patio?"
+- "How many people do you see?"
+- "What vehicles are visible?"
+- "Is there a laptop on the desk?"
+- "Are there any bottles or cups?"
+- "What animals do you see?"
+- "How many objects are detected in total?"
+
+### Testing the API
+```bash
+# Install test dependencies
+pip install requests
+
+# Run comprehensive API tests
+python test_api.py
+
+# Or test individual endpoints manually
+curl http://localhost:8000/health
+```
+
+### Integration with External Applications
+The FastAPI server provides a clean REST interface that external applications can use to:
+
+1. **Query Current State**: Ask questions about what's currently visible
+2. **Get Raw Detection Data**: Retrieve structured detection results
+3. **Control Stream**: Start/stop video capture programmatically
+4. **Monitor System Health**: Check if services are running properly
+
+### Production Deployment Considerations
+- Set appropriate environment variables for camera source and API keys
+- Use proper ASGI server like uvicorn with production settings
+- Implement authentication/authorization if needed
+- Consider rate limiting for query endpoints
+- Monitor resource usage for continuous video processing
+- Set up logging and error tracking
