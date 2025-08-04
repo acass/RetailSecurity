@@ -38,7 +38,7 @@ class YOLOVideoProcessor(VideoProcessorBase):
     """
     def __init__(self):
         """Initialize the YOLO video processor with default settings."""
-        self.model = YOLO("yolov8n.pt")
+        self.model = YOLO("../models/yolov8n.pt")
         self.filtered_classes = None  # None means show all objects
         self.confidence_threshold = 0.5
         

@@ -17,7 +17,7 @@ This is a Python-based retail security surveillance application that uses comput
 ### Environment Setup
 ```bash
 # Install all dependencies from requirements.txt
-pip install -r requirements.txt
+pip install -r config/requirements.txt
 
 # Or install manually:
 # Basic dependencies
@@ -36,10 +36,11 @@ pip install numpy matplotlib   # Common CV dependencies
 
 ### Running the Application
 ```bash
-python Basic.py                       # Run basic surveillance application
-streamlit run streamlit_webrtc_app.py # Run interactive Streamlit web app with AI chat
-python api.py                         # Run FastAPI web server with REST API
-uvicorn api:app --reload              # Run FastAPI with auto-reload for development
+python apps/Basic.py                          # Run basic surveillance application
+streamlit run apps/streamlit_webrtc_app.py    # Run interactive Streamlit web app with AI chat
+streamlit run apps/openai_vision_chat.py     # Run OpenAI Vision Chat interface
+python api/api.py                             # Run FastAPI web server with REST API
+uvicorn api.api:app --reload                  # Run FastAPI with auto-reload for development
 ```
 
 ### YOLO Model Management
@@ -68,6 +69,9 @@ Simple OpenCV-based application for direct video processing with YOLO detection.
 #### Interactive Streamlit App (`streamlit_webrtc_app.py`)
 Web-based application with AI-powered chat interface for dynamic object filtering.
 
+#### OpenAI Vision Chat App (`openai_vision_chat.py`)
+Streamlit application that captures video frames and uses OpenAI's GPT-4 Vision API to analyze images based on natural language queries.
+
 #### FastAPI REST API Server (`api.py`)
 Production-ready REST API server with natural language query processing for surveillance video streams.
 
@@ -89,6 +93,12 @@ Production-ready REST API server with natural language query processing for surv
 - **Object Filtering**: Dynamic filtering based on chat commands
 - **Class Mapping**: Converts natural language to YOLO class indices
 - **Filter Persistence**: Remembers filter settings between commands
+
+#### OpenAI Vision Analysis (Vision Chat App)
+- **Image Capture**: On-demand frame capture from live video stream
+- **Vision API**: GPT-4 Vision for visual understanding and analysis
+- **Natural Language Queries**: Ask questions about captured images
+- **Base64 Encoding**: Efficient image transmission to OpenAI API
 
 #### Camera Integration
 - **RTSP Support**: Designed for IP security cameras via RTSP protocol
@@ -141,6 +151,15 @@ Natural language examples:
 - `"cars and trucks"` - Show car and truck classes
 - `"show all objects"` - Reset filter to show everything
 - `"bottles and cups"` - Filter to bottle and cup classes
+
+### OpenAI Vision Chat Queries (Vision Chat App)
+Natural language examples:
+- `"What color is the shirt in this image?"` - Ask about clothing colors
+- `"Is this a boy or girl?"` - Ask about person characteristics
+- `"How many people are in the image?"` - Count objects or people
+- `"What objects can you see?"` - General object identification
+- `"Describe what's happening in this scene"` - Scene description
+- `"What is the person wearing?"` - Clothing description
 
 ### Detection Classes
 YOLOv8 pretrained models detect 80 COCO classes including:

@@ -19,9 +19,6 @@ env/
 # Model files (can be large)
 *.pt
 
-# Firebase logs
-firebase-debug.log
-
 # macOS
 .DS_Store
 

@@ -3,7 +3,7 @@ from ultralytics import YOLO
 import time
 
 # Load pretrained YOLOv8 model
-model = YOLO("yolov8n.pt")  # Replace with custom model if needed
+model = YOLO("../models/yolov8n.pt")  # Replace with custom model if needed
 
 # Open video stream (0 = webcam, or provide IP cam URL)
 # cap = cv2.VideoCapture("rtsp://172.16.225.166:8554/stream")

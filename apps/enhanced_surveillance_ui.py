@@ -115,7 +115,7 @@ class YOLOVideoProcessor(VideoProcessorBase):
     """Video processor that applies YOLO object detection to WebRTC video frames."""
     
     def __init__(self):
-        self.model = YOLO("yolov8n.pt")
+        self.model = YOLO("../models/yolov8n.pt")
         self.filtered_classes = None
         self.confidence_threshold = 0.5
         

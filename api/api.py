@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     # Default configuration
     source = int(os.getenv("CAMERA_SOURCE", "0")) if os.getenv("CAMERA_SOURCE", "0").isdigit() else os.getenv("CAMERA_SOURCE", "0")
     confidence = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
-    model_path = os.getenv("MODEL_PATH", "yolov8n.pt")
+    model_path = os.getenv("MODEL_PATH", "../models/yolov8n.pt")
     
     # Initialize services
     video_manager = VideoManager(source=source)
@@ -80,7 +80,7 @@ class StreamConfig(BaseModel):
     
     source: Optional[int | str] = 0
     confidence_threshold: Optional[float] = 0.5
-    model_path: Optional[str] = "yolov8n.pt"
+    model_path: Optional[str] = "../models/yolov8n.pt"
 
 class DetectionResult(BaseModel):
     class_id: int

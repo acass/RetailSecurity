@@ -34,7 +34,7 @@ class DetectionService:
         'toothbrush'
     ]
     
-    def __init__(self, model_path: str = "yolov8n.pt", confidence_threshold: float = 0.5):
+    def __init__(self, model_path: str = "../models/yolov8n.pt", confidence_threshold: float = 0.5):
         """Initialize detection service.
         
         Args:
