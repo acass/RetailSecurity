@@ -3,7 +3,7 @@ import json
 import re
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
-from detection_service import DetectionService, Detection
+from .detection_service import DetectionService, Detection
 
 
 class QueryProcessor:

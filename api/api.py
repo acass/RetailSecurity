@@ -8,9 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from video_manager import VideoManager
-from detection_service import DetectionService, Detection
-from query_processor import QueryProcessor
+from .video_manager import VideoManager
+from .detection_service import DetectionService, Detection
+from .query_processor import QueryProcessor
 
 # Load environment variables
 load_dotenv()
