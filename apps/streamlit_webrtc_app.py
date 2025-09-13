@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import threading
+from typing import List, Optional
 from PIL import Image
 import os
 from dotenv import load_dotenv
@@ -36,13 +37,13 @@ class YOLOVideoProcessor(VideoProcessorBase):
     This class handles real-time object detection on video streams using YOLOv8,
     with support for filtering specific object classes and adjustable confidence thresholds.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the YOLO video processor with default settings."""
         self.model = YOLO("../models/yolov8n.pt")
-        self.filtered_classes = None  # None means show all objects
-        self.confidence_threshold = 0.5
+        self.filtered_classes: Optional[List[int]] = None  # None means show all objects
+        self.confidence_threshold: float = 0.5
         
-    def set_filter(self, class_names):
+    def set_filter(self, class_names: Optional[List[str]]) -> None:
         """Set which object classes to show"""
         if class_names is None or len(class_names) == 0:
             self.filtered_classes = None
@@ -56,11 +57,11 @@ class YOLOVideoProcessor(VideoProcessorBase):
                         self.filtered_classes.append(i)
                         break
     
-    def set_confidence(self, confidence):
+    def set_confidence(self, confidence: float) -> None:
         """Set confidence threshold"""
         self.confidence_threshold = confidence
         
-    def recv(self, frame):
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         """Transform video frame with YOLO detection"""
         # Convert av.VideoFrame to numpy array
         img = frame.to_ndarray(format="bgr24")
@@ -115,7 +116,7 @@ class OpenAIProcessor:
     Uses OpenAI's GPT-4 to interpret user commands and convert them into
     specific object class filters for the YOLO detection system.
     """
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the OpenAI processor with API key from environment variables.
         
         Raises:
@@ -127,28 +128,36 @@ class OpenAIProcessor:
             st.stop()
         self.client = OpenAI(api_key=api_key)
         
-    def process_command(self, user_input):
+    def process_command(self, user_input: str) -> List[str]:
         """Process user command and return filtered object classes"""
         
-        available_objects = ", ".join(YOLO_CLASS_NAMES)
+        # To avoid a very long line in the prompt, chunk the available objects for readability
+        chunk_size = 10
+        chunked_objects = [YOLO_CLASS_NAMES[i:i + chunk_size] for i in range(0, len(YOLO_CLASS_NAMES), chunk_size)]
+        available_objects_formatted = "\n".join([", ".join(chunk) for chunk in chunked_objects])
         
-        system_prompt = f"""You are an assistant for a video surveillance system. 
+        system_prompt = f"""You are an assistant for a video surveillance system.
 Your job is to interpret user requests about which objects to show in the video stream.
 
-Available object types: {available_objects}
+Available object types:
+{available_objects_formatted}
 
 Rules:
-1. If user says "show all" or "reset" or similar, return an empty list []
-2. If user requests specific objects, return a list of the exact object names from the available list
-3. Handle natural language like "show only people" -> ["person"], "cars and trucks" -> ["car", "truck"]
-4. Be flexible with synonyms (e.g., "people" = "person", "bikes" = "bicycle")
-5. Return ONLY a valid JSON list, nothing else
+1. If the user wants to see everything (e.g., "show all", "reset"), return an empty list: [].
+2. If the user requests specific objects, return a JSON list of the exact object names from the available list.
+3. Handle natural language gracefully (e.g., "show me people" should be interpreted as ["person"]).
+4. Be flexible with synonyms (e.g., "people" means "person", "bikes" means "bicycle").
+5. Your response must be ONLY a valid JSON list of strings. Do not include any other text, explanations, or formatting.
 
 Examples:
-- "show only people" -> ["person"]
-- "cars and trucks" -> ["car", "truck"] 
-- "show all objects" -> []
-- "people and dogs" -> ["person", "dog"]
+- User: "show only people"
+  Assistant: ["person"]
+- User: "cars and trucks"
+  Assistant: ["car", "truck"]
+- User: "show all objects"
+  Assistant: []
+- User: "I want to see people and dogs"
+  Assistant: ["person", "dog"]
 """
 
         try:
@@ -186,7 +195,7 @@ Examples:
             st.error(f"Error processing command: {e}")
             return []
 
-def main():
+def main() -> None:
     """Main Streamlit application function for the AI surveillance system.
     
     Sets up the WebRTC video stream with YOLO object detection and 
