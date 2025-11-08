@@ -6,6 +6,8 @@ from ultralytics import YOLO
 import numpy as np
 from dataclasses import dataclass
 
+from api.config_loader import get_model_config
+
 
 @dataclass
 class Detection:
@@ -14,7 +16,7 @@ class Detection:
     class_name: str
     confidence: float
     bbox: Tuple[int, int, int, int]  # x1, y1, x2, y2
-    
+
 
 class DetectionService:
     """Service for running YOLO object detection on video frames."""
@@ -34,24 +36,23 @@ class DetectionService:
         'toothbrush'
     ]
     
-    def __init__(self, model_path: str = "../models/yolov8n.pt", confidence_threshold: float = 0.5):
-        """Initialize detection service.
+    def __init__(self):
+        """Initialize detection service using settings from config."""
+        model_config = get_model_config()
+        model_path = model_config.get("path", "../models/yolov8n.pt")
+        self.confidence_threshold = model_config.get("confidence_threshold", 0.5)
         
-        Args:
-            model_path: Path to YOLO model file
-            confidence_threshold: Minimum confidence for detections
-        """
         self.model = YOLO(model_path)
-        self.confidence_threshold = confidence_threshold
-        self.current_detections: List[Detection] = []
+        self.current_detections: Dict[str, List[Detection]] = {}
         self.detection_lock = threading.Lock()
-        self.last_detection_time = 0
+        self.last_detection_time: Dict[str, float] = {}
         
-    def detect_objects(self, frame: np.ndarray) -> List[Detection]:
-        """Run object detection on a single frame.
+    def detect_objects(self, frame: np.ndarray, camera_name: str) -> List[Detection]:
+        """Run object detection on a single frame for a specific camera.
         
         Args:
             frame: Input image frame
+            camera_name: The name of the camera source
             
         Returns:
             List of Detection objects
@@ -79,25 +80,26 @@ class DetectionService:
                     detections.append(detection)
         
         with self.detection_lock:
-            self.current_detections = detections
-            self.last_detection_time = time.time()
+            self.current_detections[camera_name] = detections
+            self.last_detection_time[camera_name] = time.time()
             
         return detections
         
-    def get_current_detections(self) -> List[Detection]:
-        """Get the most recent detection results.
+    def get_current_detections(self, camera_name: str) -> List[Detection]:
+        """Get the most recent detection results for a specific camera.
         
         Returns:
             List of current Detection objects
         """
         with self.detection_lock:
-            return self.current_detections.copy()
+            return self.current_detections.get(camera_name, []).copy()
             
-    def get_detections_by_class(self, class_names: List[str]) -> List[Detection]:
-        """Get current detections filtered by class names.
+    def get_detections_by_class(self, class_names: List[str], camera_name: str) -> List[Detection]:
+        """Get current detections for a camera, filtered by class names.
         
         Args:
             class_names: List of class names to filter by
+            camera_name: The name of the camera source
             
         Returns:
             List of filtered Detection objects
@@ -105,18 +107,20 @@ class DetectionService:
         class_names_lower = [name.lower() for name in class_names]
         
         with self.detection_lock:
+            detections = self.current_detections.get(camera_name, [])
             filtered_detections = [
-                detection for detection in self.current_detections
+                detection for detection in detections
                 if detection.class_name.lower() in class_names_lower
             ]
             
         return filtered_detections
         
-    def has_object(self, class_name: str) -> bool:
-        """Check if a specific object class is currently detected.
+    def has_object(self, class_name: str, camera_name: str) -> bool:
+        """Check if a specific object class is currently detected on a camera.
         
         Args:
             class_name: Name of the object class to check for
+            camera_name: The name of the camera source
             
         Returns:
             bool: True if object is detected, False otherwise
@@ -124,16 +128,18 @@ class DetectionService:
         class_name_lower = class_name.lower()
         
         with self.detection_lock:
+            detections = self.current_detections.get(camera_name, [])
             return any(
                 detection.class_name.lower() == class_name_lower 
-                for detection in self.current_detections
+                for detection in detections
             )
             
-    def count_objects(self, class_name: str) -> int:
-        """Count how many instances of an object class are detected.
+    def count_objects(self, class_name: str, camera_name: str) -> int:
+        """Count instances of an object class detected on a specific camera.
         
         Args:
             class_name: Name of the object class to count
+            camera_name: The name of the camera source
             
         Returns:
             int: Number of detected instances
@@ -141,36 +147,38 @@ class DetectionService:
         class_name_lower = class_name.lower()
         
         with self.detection_lock:
+            detections = self.current_detections.get(camera_name, [])
             return sum(
-                1 for detection in self.current_detections
+                1 for detection in detections
                 if detection.class_name.lower() == class_name_lower
             )
             
-    def get_detection_summary(self) -> Dict:
-        """Get a summary of current detections.
+    def get_detection_summary(self, camera_name: str) -> Dict:
+        """Get a summary of current detections for a specific camera.
         
         Returns:
             Dict with detection statistics and class counts
         """
         with self.detection_lock:
-            if not self.current_detections:
+            detections = self.current_detections.get(camera_name, [])
+            if not detections:
                 return {
                     "total_detections": 0,
                     "unique_classes": 0,
                     "class_counts": {},
-                    "last_updated": self.last_detection_time
+                    "last_updated": self.last_detection_time.get(camera_name)
                 }
                 
             class_counts = {}
-            for detection in self.current_detections:
+            for detection in detections:
                 class_name = detection.class_name
                 class_counts[class_name] = class_counts.get(class_name, 0) + 1
                 
             return {
-                "total_detections": len(self.current_detections),
+                "total_detections": len(detections),
                 "unique_classes": len(class_counts),
                 "class_counts": class_counts,
-                "last_updated": self.last_detection_time
+                "last_updated": self.last_detection_time.get(camera_name)
             }
             
     def set_confidence_threshold(self, threshold: float):

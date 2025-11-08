@@ -1,60 +1,44 @@
-import os
 import threading
 import time
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
+from config_loader import get_api_config, get_camera_config
 from video_manager import VideoManager
 from detection_service import DetectionService, Detection
 from query_processor import QueryProcessor
-
-# Load environment variables
-load_dotenv()
 
 # Global service instances
 video_manager: Optional[VideoManager] = None
 detection_service: Optional[DetectionService] = None
 query_processor: Optional[QueryProcessor] = None
-detection_thread: Optional[threading.Thread] = None
+detection_threads: Dict[str, threading.Thread] = {}
 is_processing = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    # Startup
     global video_manager, detection_service, query_processor
-    
-    # Default configuration
-    source = int(os.getenv("CAMERA_SOURCE", "0")) if os.getenv("CAMERA_SOURCE", "0").isdigit() else os.getenv("CAMERA_SOURCE", "0")
-    confidence = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
-    model_path = os.getenv("MODEL_PATH", "../models/yolov8n.pt")
-    
-    # Initialize services
-    video_manager = VideoManager(source=source)
-    detection_service = DetectionService(model_path=model_path, confidence_threshold=confidence)
+    video_manager = VideoManager()
+    detection_service = DetectionService()
     query_processor = QueryProcessor(detection_service)
-    
-    print(f"Services initialized with camera source: {source}")
-    
+    print(f"Services initialized with {len(get_camera_config())} cameras.")
     yield
-    
-    # Shutdown
-    await stop_stream()
+    await stop_stream(None)
 
 
 app = FastAPI(
     title="Retail Security Surveillance API",
-    description="AI-powered surveillance system with natural language query capabilities",
-    version="1.0.0",
+    description="AI-powered surveillance system with multi-camera support",
+    version="1.1.0",
     lifespan=lifespan
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,10 +48,12 @@ app.add_middleware(
 )
 
 
-# Pydantic models for API requests/responses
+# Pydantic models
 class QueryRequest(BaseModel):
     query: str
-    
+    camera_name: Optional[str] = None
+
+
 class QueryResponse(BaseModel):
     success: bool
     query: str
@@ -75,76 +61,56 @@ class QueryResponse(BaseModel):
     detection_context: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
-class StreamConfig(BaseModel):
-    model_config = {"protected_namespaces": ()}
-    
-    source: Optional[int | str] = 0
-    confidence_threshold: Optional[float] = 0.5
-    model_path: Optional[str] = "../models/yolov8n.pt"
 
 class DetectionResult(BaseModel):
     class_id: int
     class_name: str
     confidence: float
-    bbox: List[int]  # [x1, y1, x2, y2]
+    bbox: List[int]
+
 
 class StreamStatus(BaseModel):
     active: bool
-    source: Optional[str] = None
+    source: Optional[Any] = None
     width: Optional[int] = None
     height: Optional[int] = None
     fps: Optional[float] = None
     has_current_frame: bool = False
 
 
-def run_continuous_detection():
-    """Background task to continuously run object detection."""
-    global is_processing
-    
+def run_continuous_detection(camera_name: str):
+    """Background task for continuous object detection on a specific camera."""
     while is_processing and video_manager and detection_service:
-        frame = video_manager.get_current_frame()
+        frame = video_manager.get_current_frame(camera_name)
         if frame is not None:
-            detection_service.detect_objects(frame)
-        time.sleep(0.1)  # Process at ~10 FPS
-
-
+            detection_service.detect_objects(frame, camera_name)
+        time.sleep(0.1)
 
 
 @app.get("/")
 async def root():
-    """Root endpoint with API information."""
-    return {
-        "message": "Retail Security Surveillance API",
-        "version": "1.0.0",
-        "endpoints": {
-            "query": "POST /query - Ask natural language questions about the video",
-            "stream_status": "GET /stream/status - Check video stream status",
-            "start_stream": "POST /stream/start - Start video capture",
-            "stop_stream": "POST /stream/stop - Stop video capture",
-            "current_detections": "GET /detections/current - Get current detections",
-            "detection_classes": "GET /detections/classes - List available classes"
-        }
-    }
+    return {"message": "Retail Security Surveillance API v1.1.0"}
+
+
+@app.get("/cameras")
+async def get_cameras():
+    """Get the list of available cameras from the configuration."""
+    if not video_manager:
+        raise HTTPException(status_code=503, detail="Video manager not initialized")
+    return {"cameras": video_manager.get_available_cameras()}
 
 
 @app.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
-    """Process a natural language query about current detections.
+    """Process a natural language query about detections."""
+    if not query_processor or not video_manager:
+        raise HTTPException(status_code=503, detail="Services not initialized")
     
-    Example queries:
-    - "Are there any dogs in the patio?"
-    - "How many people do you see?"
-    - "What vehicles are visible?"
-    - "Is there a laptop on the desk?"
-    """
-    if not query_processor:
-        raise HTTPException(status_code=503, detail="Query processor not initialized")
-    
-    if not video_manager or not video_manager.is_stream_active():
-        raise HTTPException(status_code=400, detail="Video stream is not active. Start the stream first.")
-    
-    result = query_processor.process_query(request.query)
-    
+    camera_name = request.camera_name
+    if not camera_name or not video_manager.is_stream_active(camera_name):
+        raise HTTPException(status_code=400, detail=f"Camera '{camera_name}' is not active.")
+
+    result = query_processor.process_query(request.query, camera_name)
     return QueryResponse(
         success=result["success"],
         query=result["query"],
@@ -154,96 +120,77 @@ async def process_query(request: QueryRequest):
     )
 
 
-@app.get("/stream/status", response_model=StreamStatus)
+@app.get("/stream/status", response_model=Dict[str, StreamStatus])
 async def get_stream_status():
-    """Get current video stream status and information."""
+    """Get the status of all video streams."""
     if not video_manager:
-        return StreamStatus(active=False)
-    
-    info = video_manager.get_stream_info()
-    return StreamStatus(
-        active=info["active"],
-        source=info.get("source"),
-        width=info.get("width"),
-        height=info.get("height"),
-        fps=info.get("fps"),
-        has_current_frame=info.get("has_current_frame", False)
-    )
+        raise HTTPException(status_code=503, detail="Video manager not initialized")
+    return video_manager.get_all_stream_info()
 
 
 @app.post("/stream/start")
-async def start_stream(config: Optional[StreamConfig] = None):
-    """Start video stream capture with optional configuration."""
-    global video_manager, detection_service, detection_thread, is_processing
-    
-    if config:
-        # Reinitialize with new config
-        if video_manager:
-            video_manager.stop_stream()
-        
-        video_manager = VideoManager(source=config.source)
-        
-        if detection_service and config.confidence_threshold:
-            detection_service.set_confidence_threshold(config.confidence_threshold)
-    
+async def start_stream(camera_name: Optional[str] = None):
+    """Start a specific video stream or all streams."""
+    global is_processing
     if not video_manager:
         raise HTTPException(status_code=503, detail="Video manager not initialized")
     
-    success = video_manager.start_stream()
+    success = video_manager.start_stream(camera_name)
     if not success:
-        raise HTTPException(status_code=400, detail="Failed to start video stream. Check camera source.")
+        raise HTTPException(status_code=400, detail=f"Failed to start stream(s).")
     
-    # Start background detection processing
-    if not is_processing:
-        is_processing = True
-        detection_thread = threading.Thread(target=run_continuous_detection, daemon=True)
-        detection_thread.start()
-    
-    return {"message": "Video stream started successfully", "source": str(video_manager.source)}
+    is_processing = True
+    cameras_to_process = [camera_name] if camera_name else [c['name'] for c in video_manager.get_available_cameras()]
+    for cam_name in cameras_to_process:
+        if cam_name not in detection_threads or not detection_threads[cam_name].is_alive():
+            thread = threading.Thread(target=run_continuous_detection, args=(cam_name,), daemon=True)
+            detection_threads[cam_name] = thread
+            thread.start()
+
+    return {"message": f"Stream started for {'all cameras' if not camera_name else camera_name}."}
 
 
 @app.post("/stream/stop")
-async def stop_stream():
-    """Stop video stream capture."""
-    global is_processing, detection_thread
+async def stop_stream(camera_name: Optional[str] = None):
+    """Stop a specific video stream or all streams."""
+    global is_processing
+    if not video_manager:
+        raise HTTPException(status_code=503, detail="Video manager not initialized")
     
-    is_processing = False
+    video_manager.stop_stream(camera_name)
     
-    if detection_thread:
-        detection_thread.join(timeout=2.0)
-        detection_thread = None
-    
-    if video_manager:
-        video_manager.stop_stream()
-    
-    return {"message": "Video stream stopped"}
+    # If all streams are stopped, stop processing
+    if not any(s['active'] for s in video_manager.get_all_stream_info().values()):
+        is_processing = False
+        for thread in detection_threads.values():
+            thread.join(timeout=1.0)
+        detection_threads.clear()
+
+    return {"message": f"Stream stopped for {'all cameras' if not camera_name else camera_name}."}
 
 
-@app.get("/detections/current")
-async def get_current_detections():
-    """Get current object detection results."""
-    if not detection_service:
-        raise HTTPException(status_code=503, detail="Detection service not initialized")
+@app.get("/detections/current", response_model=Dict)
+async def get_current_detections(camera_name: str):
+    """Get current detections for a specific camera."""
+    if not detection_service or not video_manager:
+        raise HTTPException(status_code=503, detail="Services not initialized")
     
-    if not video_manager or not video_manager.is_stream_active():
-        raise HTTPException(status_code=400, detail="Video stream is not active")
-    
-    detections = detection_service.get_current_detections()
+    if not video_manager.is_stream_active(camera_name):
+        raise HTTPException(status_code=400, detail=f"Stream for {camera_name} is not active.")
+
+    detections = detection_service.get_current_detections(camera_name)
     detection_results = [
         DetectionResult(
             class_id=d.class_id,
             class_name=d.class_name,
             confidence=d.confidence,
             bbox=list(d.bbox)
-        )
-        for d in detections
+        ) for d in detections
     ]
-    
-    summary = detection_service.get_detection_summary()
-    
     return {
+        "camera": camera_name,
         "detections": detection_results,
-        "summary": summary
+        "summary": detection_service.get_detection_summary(camera_name)
     }
 
 
@@ -331,8 +278,9 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", "8000"))
-    host = os.getenv("HOST", "0.0.0.0")
+    api_config = get_api_config()
+    host = api_config.get("host", "0.0.0.0")
+    port = api_config.get("port", 8000)
     
     print(f"Starting Retail Security Surveillance API on {host}:{port}")
     print("Make sure to set OPENAI_API_KEY in your environment for query processing")

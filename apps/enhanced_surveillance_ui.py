@@ -41,6 +41,54 @@ class APIClient:
         self.base_url = base_url
         self.session = requests.Session()
         self.session.timeout = 10
+
+    def get_cameras(self) -> Dict[str, Any]:
+        """Get list of available cameras."""
+        try:
+            response = self.session.get(f"{self.base_url}/cameras")
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def start_stream(self, camera_name: Optional[str] = None) -> Dict[str, Any]:
+        """Start a video stream on the backend."""
+        params = {"camera_name": camera_name} if camera_name else {}
+        try:
+            response = self.session.post(f"{self.base_url}/stream/start", params=params)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def stop_stream(self, camera_name: Optional[str] = None) -> Dict[str, Any]:
+        """Stop a video stream on the backend."""
+        params = {"camera_name": camera_name} if camera_name else {}
+        try:
+            response = self.session.post(f"{self.base_url}/stream/stop", params=params)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_stream_status(self) -> Dict[str, Any]:
+        """Get stream statuses from the backend."""
+        try:
+            response = self.session.get(f"{self.base_url}/stream/status")
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def query(self, question: str, camera_name: Optional[str] = None) -> Dict[str, Any]:
+        """Send a natural language query to the backend."""
+        payload = {"query": question, "camera_name": camera_name}
+        try:
+            response = self.session.post(f"{self.base_url}/query", json=payload)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
     def health_check(self) -> Dict[str, Any]:
         """Check if API is healthy and accessible."""
@@ -51,56 +99,16 @@ class APIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def start_stream(self, source: int = 0, confidence_threshold: float = 0.5) -> Dict[str, Any]:
-        """Start video stream on the backend."""
-        try:
-            payload = {
-                "source": source,
-                "confidence_threshold": confidence_threshold
-            }
-            response = self.session.post(f"{self.base_url}/stream/start", json=payload)
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def stop_stream(self) -> Dict[str, Any]:
-        """Stop video stream on the backend."""
-        try:
-            response = self.session.post(f"{self.base_url}/stream/stop")
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def get_stream_status(self) -> Dict[str, Any]:
-        """Get current stream status from backend."""
-        try:
-            response = self.session.get(f"{self.base_url}/stream/status")
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def query(self, question: str) -> Dict[str, Any]:
-        """Send natural language query to backend."""
-        try:
-            payload = {"query": question}
-            response = self.session.post(f"{self.base_url}/query", json=payload)
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def get_current_detections(self) -> Dict[str, Any]:
+    def get_current_detections(self, camera_name: Optional[str] = None) -> Dict[str, Any]:
         """Get current detections from backend."""
+        params = {"camera_name": camera_name} if camera_name else {}
         try:
-            response = self.session.get(f"{self.base_url}/detections/current")
+            response = self.session.get(f"{self.base_url}/detections/current", params=params)
             response.raise_for_status()
             return {"success": True, "data": response.json()}
         except Exception as e:
             return {"success": False, "error": str(e)}
-    
+
     def set_confidence_threshold(self, threshold: float) -> Dict[str, Any]:
         """Update confidence threshold on backend."""
         try:
@@ -245,80 +253,65 @@ Examples:
 
 
 def render_status_dashboard(api_client: APIClient):
-    """Render the status dashboard showing system health."""
+    """Render the status dashboard showing system health and camera statuses."""
     st.subheader("System Status")
     
-    # API Health Check
     health = api_client.health_check()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if health["success"]:
-            st.success("✅ API Backend Connected")
-            services = health["data"].get("services", {})
-            st.write(f"**Video Manager**: {'✅' if services.get('video_manager') else '❌'}")
-            st.write(f"**Detection Service**: {'✅' if services.get('detection_service') else '❌'}")
-            st.write(f"**Query Processor**: {'✅' if services.get('query_processor') else '❌'}")
-        else:
-            st.error("❌ API Backend Disconnected")
-            st.write(f"Error: {health.get('error', 'Unknown error')}")
-    
-    with col2:
-        # Stream Status
-        if health["success"]:
-            stream_status = api_client.get_stream_status()
-            if stream_status["success"]:
-                data = stream_status["data"]
-                if data["active"]:
-                    st.success("✅ Backend Stream Active")
-                    st.write(f"**Source**: {data.get('source', 'Unknown')}")
-                    st.write(f"**Resolution**: {data.get('width', '?')}x{data.get('height', '?')}")
-                else:
-                    st.info("⏸️ Backend Stream Inactive")
+    if health["success"]:
+        st.success("✅ API Backend Connected")
+    else:
+        st.error(f"❌ API Backend Disconnected: {health.get('error')}")
+        return
+
+    stream_status = api_client.get_stream_status()
+    if stream_status["success"]:
+        st.subheader("Camera Status")
+        for cam_name, status in stream_status["data"].items():
+            if status.get('active'):
+                st.success(f"**{cam_name}**: Active - {status.get('width')}x{status.get('height')}")
             else:
-                st.warning("⚠️ Cannot get stream status")
+                st.info(f"**{cam_name}**: Inactive")
+    else:
+        st.warning("⚠️ Could not retrieve stream statuses.")
 
 
 def render_api_controls(api_client: APIClient):
-    """Render API stream control buttons."""
+    """Render API stream control buttons for multiple cameras."""
     st.subheader("API Stream Controls")
     
+    cameras_res = api_client.get_cameras()
+    if not cameras_res["success"]:
+        st.error("Could not fetch camera list from API.")
+        return
+
+    camera_names = [cam['name'] for cam in cameras_res["data"].get("cameras", [])]
+
+    selected_camera = st.selectbox("Select Camera", ["All"] + camera_names)
+
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🎥 Start API Stream", type="primary"):
-            with st.spinner("Starting API stream..."):
-                result = api_client.start_stream(
-                    source=st.session_state.get('api_camera_source', 0),
-                    confidence_threshold=st.session_state.get('api_confidence', 0.5)
-                )
+        if st.button("🎥 Start Stream", type="primary"):
+            cam_to_start = selected_camera if selected_camera != "All" else None
+            with st.spinner(f"Starting stream for {selected_camera}..."):
+                result = api_client.start_stream(cam_to_start)
                 if result["success"]:
-                    st.success("API stream started!")
+                    st.success(f"Stream started for {selected_camera}!")
                 else:
                     st.error(f"Failed to start stream: {result.get('error')}")
     
     with col2:
-        if st.button("⏹️ Stop API Stream"):
-            with st.spinner("Stopping API stream..."):
-                result = api_client.stop_stream()
+        if st.button("⏹️ Stop Stream"):
+            cam_to_stop = selected_camera if selected_camera != "All" else None
+            with st.spinner(f"Stopping stream for {selected_camera}..."):
+                result = api_client.stop_stream(cam_to_stop)
                 if result["success"]:
-                    st.success("API stream stopped!")
+                    st.success(f"Stream stopped for {selected_camera}!")
                 else:
                     st.error(f"Failed to stop stream: {result.get('error')}")
-    
+
     # API Configuration
     st.subheader("API Configuration")
-    
-    api_camera_source = st.number_input(
-        "API Camera Source", 
-        min_value=0, 
-        max_value=10, 
-        value=st.session_state.get('api_camera_source', 0),
-        help="0 for webcam, or camera index"
-    )
-    st.session_state.api_camera_source = api_camera_source
-    
     api_confidence = st.slider(
         "API Confidence Threshold",
         min_value=0.1, 
@@ -327,12 +320,11 @@ def render_api_controls(api_client: APIClient):
         step=0.1,
         help="Confidence threshold for API detection"
     )
-    st.session_state.api_confidence = api_confidence
-    
     if st.button("Update API Confidence"):
         result = api_client.set_confidence_threshold(api_confidence)
         if result["success"]:
             st.success(f"API confidence updated to {api_confidence}")
+            st.session_state.api_confidence = api_confidence
         else:
             st.error(f"Failed to update confidence: {result.get('error')}")
 
@@ -341,105 +333,49 @@ def render_chat_interface(api_client: APIClient, openai_processor: OpenAIProcess
     """Render the dual-mode chat interface."""
     st.subheader("AI Chat Interface")
     
-    # Chat mode selection
-    chat_mode = st.radio(
-        "Chat Mode:",
-        ["Local Filtering", "API Queries"],
-        help="Local: Filter WebRTC stream | API: Query backend detections"
-    )
+    chat_mode = st.radio("Chat Mode:", ["Local Filtering", "API Queries"], help="Local: Filter WebRTC stream | API: Query backend detections")
     
-    # Chat input
     if chat_mode == "Local Filtering":
         st.markdown("**Local Mode**: Filter objects in the WebRTC stream")
-        user_input = st.text_input(
-            "Filter Command:",
-            placeholder="e.g., 'show only people', 'cars and trucks', 'show all'",
-            key="local_chat_input"
-        )
+        user_input = st.text_input("Filter Command:", placeholder="e.g., 'show only people', 'cars and trucks'", key="local_chat_input")
         
         if st.button("Apply Filter", type="primary"):
             if user_input.strip():
                 with st.spinner("Processing filter command..."):
                     filtered_classes = openai_processor.process_command(user_input)
                     st.session_state.current_filter = filtered_classes
-                    
                     if webrtc_ctx.video_processor:
                         webrtc_ctx.video_processor.set_filter(filtered_classes)
-                    
-                    if filtered_classes:
-                        filter_text = ", ".join(filtered_classes)
-                        st.success(f"Now showing: {filter_text}")
-                    else:
-                        st.success("Now showing: All objects")
+                    st.success(f"Filter updated to: {filtered_classes or 'All'}")
             else:
                 st.warning("Please enter a filter command")
-    
     else:  # API Queries
         st.markdown("**API Mode**: Ask questions about backend detections")
-        user_input = st.text_input(
-            "Question:",
-            placeholder="e.g., 'How many people do you see?', 'Are there any dogs?'",
-            key="api_chat_input"
-        )
+
+        cameras_res = api_client.get_cameras()
+        camera_names = [cam['name'] for cam in cameras_res.get("data", {}).get("cameras", [])]
+
+        selected_camera = st.selectbox("Query Target Camera", camera_names, key="query_camera")
+
+        user_input = st.text_input("Question:", placeholder="e.g., 'How many people do you see?'", key="api_chat_input")
         
         if st.button("Ask Question", type="primary"):
-            if user_input.strip():
-                with st.spinner("Querying API..."):
-                    result = api_client.query(user_input)
+            if user_input.strip() and selected_camera:
+                with st.spinner(f"Querying {selected_camera}..."):
+                    result = api_client.query(user_input, selected_camera)
                     if result["success"]:
                         data = result["data"]
                         st.success(f"**Q:** {data['query']}")
                         st.info(f"**A:** {data['answer']}")
-                        
-                        # Show detection context if available
                         if data.get('detection_context'):
                             with st.expander("Detection Details"):
                                 st.json(data['detection_context'])
                     else:
                         st.error(f"Query failed: {result.get('error')}")
             else:
-                st.warning("Please enter a question")
+                st.warning("Please select a camera and enter a question.")
     
-    # Quick action buttons
-    st.subheader("Quick Actions")
-    
-    if chat_mode == "Local Filtering":
-        examples = [
-            "show only people",
-            "cars and trucks", 
-            "show all objects",
-            "person and dog"
-        ]
-        
-        for example in examples:
-            if st.button(f"'{example}'", key=f"local_example_{example}"):
-                filtered_classes = openai_processor.process_command(example)
-                st.session_state.current_filter = filtered_classes
-                
-                if webrtc_ctx.video_processor:
-                    webrtc_ctx.video_processor.set_filter(filtered_classes)
-                
-                if filtered_classes:
-                    filter_text = ", ".join(filtered_classes)
-                    st.success(f"Now showing: {filter_text}")
-                else:
-                    st.success("Now showing: All objects")
-    
-    else:  # API Examples
-        examples = [
-            "How many people do you see?",
-            "Are there any cars visible?",
-            "What objects are detected?",
-            "Is there a laptop on the desk?"
-        ]
-        
-        for example in examples:
-            if st.button(f"'{example}'", key=f"api_example_{example}"):
-                result = api_client.query(example)
-                if result["success"]:
-                    data = result["data"]
-                    st.success(f"**Q:** {data['query']}")
-                    st.info(f"**A:** {data['answer']}")
+    # Quick action buttons could be adapted similarly
 
 
 def main():

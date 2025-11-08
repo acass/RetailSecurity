@@ -1,0 +1,19 @@
+# Configuration for the AI Surveillance System
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+
+model:
+  path: "../models/yolov8n.pt"
+  confidence_threshold: 0.5
+
+# List of camera sources
+# Each source has a name and a URI (e.g., 0 for webcam, rtsp:// link)
+cameras:
+  - name: "Webcam"
+    uri: 0
+  - name: "Living Room"
+    uri: "rtsp://192.168.1.10:8554/stream1"
+  - name: "Front Door"
+    uri: "rtsp://192.168.1.11:8554/stream1"

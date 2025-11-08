@@ -32,11 +32,12 @@ class QueryProcessor:
             print("Natural language queries will not be available")
             return None
         
-    def process_query(self, query: str) -> Dict[str, Any]:
-        """Process a natural language query about current detections.
+def process_query(self, query: str, camera_name: str) -> Dict[str, Any]:
+        """Process a natural language query about detections from a specific camera.
         
         Args:
-            query: Natural language query (e.g., "Are there any dogs in the video?")
+            query: Natural language query (e.g., "Are there any dogs?")
+            camera_name: The name of the camera source
             
         Returns:
             Dict with query results and metadata
@@ -44,28 +45,21 @@ class QueryProcessor:
         if not self.client:
             return {
                 "success": False,
-                "error": "OpenAI client not initialized. Check OPENAI_API_KEY environment variable.",
-                "answer": "Unable to process query - AI service unavailable"
+                "error": "OpenAI client not initialized. Check OPENAI_API_KEY.",
+                "answer": "AI service unavailable"
             }
             
-        # Get current detections
-        current_detections = self.detection_service.get_current_detections()
-        detection_summary = self.detection_service.get_detection_summary()
+        current_detections = self.detection_service.get_current_detections(camera_name)
+        detection_summary = self.detection_service.get_detection_summary(camera_name)
         
-        # Prepare context for AI
         available_classes = self.detection_service.get_available_classes()
         
         if not current_detections:
-            context = "No objects are currently detected in the video stream."
+            context = f"On camera '{camera_name}', no objects are currently detected."
         else:
-            class_counts = detection_summary["class_counts"]
-            context_parts = []
-            for class_name, count in class_counts.items():
-                if count == 1:
-                    context_parts.append(f"1 {class_name}")
-                else:
-                    context_parts.append(f"{count} {class_name}s")
-            context = f"Currently detected objects: {', '.join(context_parts)}"
+            class_counts = detection_summary.get("class_counts", {})
+            context_parts = [f"{count} {name}{'s' if count > 1 else ''}" for name, count in class_counts.items()]
+            context = f"On camera '{camera_name}', detected objects are: {', '.join(context_parts)}."
             
         # Create AI prompt
         system_prompt = f"""You are an AI assistant analyzing a real-time video surveillance feed.
